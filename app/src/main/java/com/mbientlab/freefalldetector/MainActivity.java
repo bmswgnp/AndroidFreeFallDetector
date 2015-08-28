@@ -5,20 +5,26 @@
 package com.mbientlab.freefalldetector;
 
 import android.app.Activity;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 
 import com.mbientlab.metawear.MetaWearBleService;
+import com.mbientlab.metawear.MetaWearBoard;
 
 public class MainActivity extends Activity implements ServiceConnection {
 
+    private static final String LOG_TAG = "FreeFallDetector";
     private MetaWearBleService.LocalBinder serviceBinder;
+    private MetaWearBoard mwBoard;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,6 +66,24 @@ public class MainActivity extends Activity implements ServiceConnection {
     @Override
     public void onServiceConnected(ComponentName name, IBinder service) {
         serviceBinder= (MetaWearBleService.LocalBinder) service;
+
+        String mwMacAddress= "D5:7B:B9:7D:CE:0E";   ///< Put your board's MAC address here
+        BluetoothManager btManager= (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+        BluetoothDevice btDevice= btManager.getAdapter().getRemoteDevice(mwMacAddress);
+
+        mwBoard= serviceBinder.getMetaWearBoard(btDevice);
+        mwBoard.setConnectionStateHandler(new MetaWearBoard.ConnectionStateHandler() {
+            @Override
+            public void connected() {
+                Log.i(LOG_TAG, "Connected");
+            }
+
+            @Override
+            public void disconnected() {
+                Log.i(LOG_TAG, "Disconnected");
+            }
+        });
+        mwBoard.connect();
     }
 
     @Override
