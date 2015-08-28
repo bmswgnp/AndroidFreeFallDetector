@@ -16,15 +16,23 @@ import android.os.IBinder;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 
+import com.mbientlab.metawear.AsyncOperation;
+import com.mbientlab.metawear.Message;
 import com.mbientlab.metawear.MetaWearBleService;
 import com.mbientlab.metawear.MetaWearBoard;
+import com.mbientlab.metawear.RouteManager;
+import com.mbientlab.metawear.UnsupportedModuleException;
+import com.mbientlab.metawear.data.CartesianFloat;
+import com.mbientlab.metawear.module.Accelerometer;
 
 public class MainActivity extends Activity implements ServiceConnection {
 
-    private static final String LOG_TAG = "FreeFallDetector";
+    private static final String LOG_TAG = "FreeFallDetector", ACCEL_DATA= "accel_data";
     private MetaWearBleService.LocalBinder serviceBinder;
     private MetaWearBoard mwBoard;
+    private Accelerometer accelModule;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,6 +40,21 @@ public class MainActivity extends Activity implements ServiceConnection {
         setContentView(R.layout.activity_main);
 
         getApplicationContext().bindService(new Intent(this, MetaWearBleService.class), this, Context.BIND_AUTO_CREATE);
+
+        findViewById(R.id.start_accel).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                accelModule.enableAxisSampling();
+                accelModule.start();
+            }
+        });
+        findViewById(R.id.stop_accel).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                accelModule.stop();
+                accelModule.disableAxisSampling();
+            }
+        });
     }
 
     @Override
@@ -76,6 +99,26 @@ public class MainActivity extends Activity implements ServiceConnection {
             @Override
             public void connected() {
                 Log.i(LOG_TAG, "Connected");
+
+                try {
+                    accelModule= mwBoard.getModule(Accelerometer.class);
+                    accelModule.setOutputDataRate(12.5f);   ///< Set operating freq to 12.5Hz
+                    accelModule.routeData().fromAxes().stream(ACCEL_DATA).commit()
+                            .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                                @Override
+                                public void success(RouteManager result) {
+                                    result.subscribe(ACCEL_DATA, new RouteManager.MessageHandler() {
+                                        @Override
+                                        public void process(Message message) {
+                                            Log.i(LOG_TAG, message.getData(CartesianFloat.class).toString());
+                                        }
+                                    });
+
+                                }
+                            });
+                } catch (UnsupportedModuleException e) {
+                    Log.e(LOG_TAG, "Cannot find module", e);
+                }
             }
 
             @Override
