@@ -22,4 +22,12 @@
         android:id="@+id/stop_accel"
         android:layout_below="@+id/start_accel"
         android:layout_alignParentStart="true" />
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Reset"
+        android:id="@+id/reset_board"
+        android:layout_below="@+id/stop_accel"
+        android:layout_alignParentStart="true" />
 </RelativeLayout>

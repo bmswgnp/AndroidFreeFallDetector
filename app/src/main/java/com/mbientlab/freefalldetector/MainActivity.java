@@ -24,15 +24,20 @@ import com.mbientlab.metawear.MetaWearBleService;
 import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.RouteManager;
 import com.mbientlab.metawear.UnsupportedModuleException;
-import com.mbientlab.metawear.data.CartesianFloat;
 import com.mbientlab.metawear.module.Accelerometer;
+import com.mbientlab.metawear.module.Debug;
+import com.mbientlab.metawear.processor.Average;
+import com.mbientlab.metawear.processor.Comparison;
+import com.mbientlab.metawear.processor.Rss;
+import com.mbientlab.metawear.processor.Threshold;
 
 public class MainActivity extends Activity implements ServiceConnection {
 
-    private static final String LOG_TAG = "FreeFallDetector", ACCEL_DATA= "accel_data";
+    private static final String LOG_TAG = "FreeFallDetector", FREE_FALL_KEY= "free_fall_key", NO_FREE_FALL_KEY= "no_free_fall_key";
     private MetaWearBleService.LocalBinder serviceBinder;
     private MetaWearBoard mwBoard;
     private Accelerometer accelModule;
+    private Debug debugModule;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +58,12 @@ public class MainActivity extends Activity implements ServiceConnection {
             public void onClick(View v) {
                 accelModule.stop();
                 accelModule.disableAxisSampling();
+            }
+        });
+        findViewById(R.id.reset_board).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                debugModule.resetDevice();
             }
         });
     }
@@ -102,20 +113,34 @@ public class MainActivity extends Activity implements ServiceConnection {
 
                 try {
                     accelModule= mwBoard.getModule(Accelerometer.class);
-                    accelModule.setOutputDataRate(12.5f);   ///< Set operating freq to 12.5Hz
-                    accelModule.routeData().fromAxes().stream(ACCEL_DATA).commit()
-                            .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                    accelModule.setOutputDataRate(50f);   ///< Set operating freq to 50Hz
+                    accelModule.routeData().fromAxes()
+                            .process(new Rss())
+                            .process(new Average((byte) 4))
+                            .process(new Threshold(0.5f, Threshold.OutputMode.BINARY))
+                            .split()
+                                .branch().process(new Comparison(Comparison.Operation.EQ, -1)).stream(FREE_FALL_KEY)
+                                .branch().process(new Comparison(Comparison.Operation.EQ, 1)).stream(NO_FREE_FALL_KEY)
+                            .end()
+                    .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                        @Override
+                        public void success(RouteManager result) {
+                            result.subscribe(FREE_FALL_KEY, new RouteManager.MessageHandler() {
                                 @Override
-                                public void success(RouteManager result) {
-                                    result.subscribe(ACCEL_DATA, new RouteManager.MessageHandler() {
-                                        @Override
-                                        public void process(Message message) {
-                                            Log.i(LOG_TAG, message.getData(CartesianFloat.class).toString());
-                                        }
-                                    });
-
+                                public void process(Message message) {
+                                    Log.i(LOG_TAG, "Entered Free Fall");
                                 }
                             });
+                            result.subscribe(NO_FREE_FALL_KEY, new RouteManager.MessageHandler() {
+                                @Override
+                                public void process(Message message) {
+                                    Log.i(LOG_TAG, "Left Free Fall");
+                                }
+                            });
+                        }
+                    });
+
+                    debugModule= mwBoard.getModule(Debug.class);
                 } catch (UnsupportedModuleException e) {
                     Log.e(LOG_TAG, "Cannot find module", e);
                 }
