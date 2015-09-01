@@ -26,6 +26,7 @@ import com.mbientlab.metawear.RouteManager;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.module.Accelerometer;
 import com.mbientlab.metawear.module.Debug;
+import com.mbientlab.metawear.module.Logging;
 import com.mbientlab.metawear.processor.Average;
 import com.mbientlab.metawear.processor.Comparison;
 import com.mbientlab.metawear.processor.Rss;
@@ -38,6 +39,7 @@ public class MainActivity extends Activity implements ServiceConnection {
     private MetaWearBoard mwBoard;
     private Accelerometer accelModule;
     private Debug debugModule;
+    private Logging loggingModule;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,6 +51,7 @@ public class MainActivity extends Activity implements ServiceConnection {
         findViewById(R.id.start_accel).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                loggingModule.startLogging(true);
                 accelModule.enableAxisSampling();
                 accelModule.start();
             }
@@ -58,6 +61,16 @@ public class MainActivity extends Activity implements ServiceConnection {
             public void onClick(View v) {
                 accelModule.stop();
                 accelModule.disableAxisSampling();
+                loggingModule.stopLogging();
+
+                loggingModule.downloadLog(0.f, new Logging.DownloadHandler() {
+                    @Override
+                    public void onProgressUpdate(int nEntriesLeft, int totalEntries) {
+                        if (nEntriesLeft == 0) {
+                            Log.i(LOG_TAG, "Log download complete");
+                        }
+                    }
+                });
             }
         });
         findViewById(R.id.reset_board).setOnClickListener(new View.OnClickListener() {
@@ -119,28 +132,29 @@ public class MainActivity extends Activity implements ServiceConnection {
                             .process(new Average((byte) 4))
                             .process(new Threshold(0.5f, Threshold.OutputMode.BINARY))
                             .split()
-                                .branch().process(new Comparison(Comparison.Operation.EQ, -1)).stream(FREE_FALL_KEY)
-                                .branch().process(new Comparison(Comparison.Operation.EQ, 1)).stream(NO_FREE_FALL_KEY)
+                                .branch().process(new Comparison(Comparison.Operation.EQ, -1)).log(FREE_FALL_KEY)
+                                .branch().process(new Comparison(Comparison.Operation.EQ, 1)).log(NO_FREE_FALL_KEY)
                             .end()
                     .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
                         @Override
                         public void success(RouteManager result) {
-                            result.subscribe(FREE_FALL_KEY, new RouteManager.MessageHandler() {
+                            result.setLogMessageHandler(FREE_FALL_KEY, new RouteManager.MessageHandler() {
                                 @Override
                                 public void process(Message message) {
-                                    Log.i(LOG_TAG, "Entered Free Fall");
+                                    Log.i(LOG_TAG, String.format("%tY%<tm%<td-%<tH%<tM%<tS%<tL: Entered Free Fall", message.getTimestamp()));
                                 }
                             });
-                            result.subscribe(NO_FREE_FALL_KEY, new RouteManager.MessageHandler() {
+                            result.setLogMessageHandler(NO_FREE_FALL_KEY, new RouteManager.MessageHandler() {
                                 @Override
                                 public void process(Message message) {
-                                    Log.i(LOG_TAG, "Left Free Fall");
+                                    Log.i(LOG_TAG, String.format("%tY%<tm%<td-%<tH%<tM%<tS%<tL: Left Free Fall", message.getTimestamp()));
                                 }
                             });
                         }
                     });
 
                     debugModule= mwBoard.getModule(Debug.class);
+                    loggingModule= mwBoard.getModule(Logging.class);
                 } catch (UnsupportedModuleException e) {
                     Log.e(LOG_TAG, "Cannot find module", e);
                 }
